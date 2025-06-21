@@ -1,79 +1,56 @@
-
-import spacy
-import re
-from collections import Counter
-from docx import Document
+import docx
 import json
 from io import BytesIO
+from docx import Document
 import matplotlib.pyplot as plt
 
-nlp = spacy.load("en_core_web_sm")
-
-with open("data/skills.json") as f:
-    SKILLS = json.load(f)
-
-def extract_resume_text(file):
-    doc = Document(file)
-    text = "\n".join([para.text for para in doc.paragraphs if para.text.strip() != ""])
-    return text
+def extract_resume_text(uploaded_file):
+    doc = docx.Document(uploaded_file)
+    return "\n".join([para.text for para in doc.paragraphs])
 
 def extract_keywords_spacy(text):
-    doc = nlp(text)
-    keywords = set()
-    for chunk in doc.noun_chunks:
-        cleaned = chunk.text.lower().strip()
-        if len(cleaned.split()) >= 1:
-            keywords.add(cleaned)
-    return list(keywords)
+    return list(set([token.lemma_.lower() for token in text.split() if len(token) > 3]))
 
 def match_keywords(resume_text, jd_keywords):
-    matched = [kw for kw in jd_keywords if kw.lower() in resume_text.lower()]
-    missing = [kw for kw in jd_keywords if kw.lower() not in resume_text.lower()]
+    resume_words = resume_text.lower()
+    matched = [word for word in jd_keywords if word in resume_words]
+    missing = [word for word in jd_keywords if word not in resume_words]
     return matched, missing
 
-def categorize_skills(keywords):
-    hard = [kw for kw in keywords if kw.lower() in SKILLS['hard']]
-    soft = [kw for kw in keywords if kw.lower() in SKILLS['soft']]
+def categorize_skills(missing_skills):
+    with open("data/skills.json", "r") as f:
+        skill_data = json.load(f)
+    hard = [skill for skill in missing_skills if skill in skill_data.get("hard", [])]
+    soft = [skill for skill in missing_skills if skill in skill_data.get("soft", [])]
     return hard, soft
 
-def get_relevant_sentences(text, keywords):
-    sentences = text.split("\n")
-    relevant = []
-    for line in sentences:
-        for kw in keywords:
-            if kw.lower() in line.lower():
-                relevant.append(line)
-                break
-    return list(set(relevant))
+def get_relevant_sentences(resume_text, matched_skills):
+    lines = resume_text.split("\n")
+    return [line for line in lines if any(skill in line.lower() for skill in matched_skills)]
+
+def calculate_resume_score(matched, total_keywords, relevant_sentences, total_lines, hard, soft):
+    if total_keywords == 0:
+        return 0
+    match_ratio = len(matched) / total_keywords
+    relevance_ratio = len(relevant_sentences) / max(total_lines, 1)
+    penalty = 0.05 * len(hard) + 0.03 * len(soft)
+    raw_score = (0.6 * match_ratio + 0.4 * relevance_ratio) * 100
+    return round(max(raw_score - penalty * 100, 0), 2)
 
 def create_tailored_resume(sentences):
     doc = Document()
     doc.add_heading("Tailored Resume", 0)
-    for s in sentences:
-        doc.add_paragraph(s, style="List Bullet")
+    for sentence in sentences:
+        doc.add_paragraph(sentence)
     output = BytesIO()
     doc.save(output)
     output.seek(0)
     return output
 
 def draw_pie_chart(matched, missing):
-    fig, ax = plt.subplots()
     labels = 'Matched', 'Missing'
     sizes = [matched, missing]
-    colors = ['green', 'red']
-    ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=colors)
+    fig, ax = plt.subplots()
+    ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=['#4CAF50', '#FF5252'])
     ax.axis('equal')
     return fig
-
-def calculate_resume_score(matched_keywords, total_keywords, relevant_sentences, total_sentences, hard_skills, soft_skills):
-    if total_keywords == 0: return 0
-    skill_match_ratio = len(matched_keywords) / total_keywords
-    context_ratio = len(relevant_sentences) / (total_sentences if total_sentences > 0 else 1)
-    skill_balance = min(len(hard_skills), len(soft_skills)) / max(len(hard_skills) + len(soft_skills), 1)
-    score = (
-        (skill_match_ratio * 0.5) + 
-        (context_ratio * 0.2) +
-        (min(len(matched_keywords) / 15, 1.0) * 0.2) +
-        (skill_balance * 0.1)
-    ) * 100
-    return round(score, 2)
