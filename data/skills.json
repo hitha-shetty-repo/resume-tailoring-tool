@@ -1,20 +1,8 @@
 {
   "hard": [
-    "python",
-    "sql",
-    "excel",
-    "tableau",
-    "data analysis",
-    "machine learning",
-    "etl",
-    "api integration"
+    "python", "sql", "tableau", "excel", "r", "java", "aws", "tensorflow", "pandas"
   ],
   "soft": [
-    "communication",
-    "teamwork",
-    "leadership",
-    "problem-solving",
-    "adaptability",
-    "time management"
+    "communication", "leadership", "problem-solving", "teamwork", "adaptability"
   ]
 }
