@@ -1,63 +1,63 @@
-
 import streamlit as st
-from utils import *
-import base64
+import docx
+import spacy
+import os
+import matplotlib.pyplot as plt
+from utils import extract_text_from_docx, extract_skills_from_text, match_skills, categorize_skills, calculate_score
+
+# 🔧 Auto-download spaCy model if missing
+try:
+    nlp = spacy.load("en_core_web_sm")
+except:
+    import subprocess
+    subprocess.run(["python", "-m", "spacy", "download", "en_core_web_sm"])
+    nlp = spacy.load("en_core_web_sm")
 
 st.set_page_config(page_title="Resume Tailoring Tool", layout="wide")
+
 st.title("📄 Resume Tailoring Tool")
+st.markdown("Tailor your resume to any job description using AI 💼")
 
-st.markdown("""
-Upload your **resume** and **job description**, and this app will:
-- Extract keywords from the JD
-- Highlight matching and missing skills
-- Categorize missing skills (Hard vs Soft)
-- Display skill match pie chart
-- Show a final Resume Match Score
-- Generate a tailored resume (downloadable)
-""")
+col1, col2 = st.columns(2)
 
-resume_file = st.file_uploader("📤 Upload Resume (.docx)", type=["docx"])
-jd_file = st.file_uploader("📄 Upload Job Description (.txt)", type=["txt"])
+with col1:
+    resume_file = st.file_uploader("Upload your resume (.docx)", type=["docx"])
+with col2:
+    jd_file = st.file_uploader("Upload Job Description (.txt)", type=["txt"])
 
 if resume_file and jd_file:
-    resume_text = extract_resume_text(resume_file)
+    resume_text = extract_text_from_docx(resume_file)
     jd_text = jd_file.read().decode("utf-8")
 
-    with st.expander("🔍 Step 1: Extracted JD Keywords"):
-        jd_keywords = extract_keywords_spacy(jd_text)
-        st.write(jd_keywords)
+    st.subheader("🧠 Extracting & Matching Skills...")
+    resume_skills = extract_skills_from_text(resume_text, nlp)
+    jd_skills = extract_skills_from_text(jd_text, nlp)
 
-    with st.expander("📋 Step 2: Skill Matching"):
-        matched, missing = match_keywords(resume_text, jd_keywords)
-        st.success(f"Matched: {len(matched)}")
-        st.error(f"Missing: {len(missing)}")
-        st.write("✅ Matched:", matched)
-        st.write("❌ Missing:", missing)
+    matched_skills, missing_skills = match_skills(resume_skills, jd_skills)
+    hard_missing, soft_missing = categorize_skills(missing_skills)
 
-    with st.expander("🧠 Step 3: Skill Categorization"):
-        hard, soft = categorize_skills(missing)
-        st.write("🛠 Hard Skills:", hard)
-        st.write("🤝 Soft Skills:", soft)
+    st.success(f"✅ Skills Matched: {len(matched_skills)} / {len(jd_skills)}")
 
-    with st.expander("📊 Step 4: Skill Match Chart"):
-        st.pyplot(draw_pie_chart(len(matched), len(missing)))
+    st.subheader("📊 Skill Match Summary")
+    labels = 'Matched', 'Missing'
+    sizes = [len(matched_skills), len(missing_skills)]
+    fig, ax = plt.subplots()
+    ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, colors=['#4CAF50', '#FF5252'])
+    ax.axis('equal')
+    st.pyplot(fig)
 
-    with st.expander("✨ Step 5: Relevant Resume Sentences"):
-        relevant_sentences = get_relevant_sentences(resume_text, matched)
-        st.write(relevant_sentences)
+    score = calculate_score(len(matched_skills), len(jd_skills), resume_text, matched_skills)
 
-    with st.expander("📈 Step 6: Resume Match Score"):
-        score = calculate_resume_score(matched, len(jd_keywords), relevant_sentences, len(resume_text.split('\n')), hard, soft)
-        st.metric(label="📈 Match Score", value=f"{score}%")
-        st.markdown("### 📊 Score Breakdown")
-        st.write({
-            "Skill Match": f"{len(matched)}/{len(jd_keywords)}",
-            "Relevant Sentences": f"{len(relevant_sentences)} lines",
-            "Hard Skills Missing": len(hard),
-            "Soft Skills Missing": len(soft),
-            "Score": f"{score}%"
-        })
+    st.metric("💯 Resume Match Score", f"{score}/100")
 
-    with st.expander("📄 Step 7: Download Tailored Resume"):
-        tailored_doc = create_tailored_resume(relevant_sentences)
-        st.download_button("📥 Download Tailored Resume", tailored_doc.getvalue(), file_name="Tailored_Resume.docx")
+    st.subheader("🔍 Missing Skills Breakdown")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.error("**Hard Skills**")
+        st.write(hard_missing if hard_missing else "✅ None!")
+    with col2:
+        st.warning("**Soft Skills**")
+        st.write(soft_missing if soft_missing else "✅ None!")
+
+    st.subheader("📄 Tailored Resume Preview")
+    st.code(resume_text, language='markdown')
